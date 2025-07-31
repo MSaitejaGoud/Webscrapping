@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: fastapi-playwright-app
+    runtime: docker
+    plan: free
+    branch: main
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    buildFilter:
+      paths:
+        - Dockerfile
+        - requirements.txt
+        - render.yaml
