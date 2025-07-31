@@ -6,4 +6,4 @@ COPY . /app
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-CMD ["python", "main.py"]
+CMD ["uvicorn", "fastapi_scraper:app", "--host", "0.0.0.0", "--port", "8000"]
