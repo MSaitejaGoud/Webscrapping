@@ -1,3 +1,38 @@
+import mimetypes
+import os
+# --- SMART FETCH FUNCTION ---
+def smart_fetch(url):
+    resp = requests.get(url, stream=True)
+    content_type = resp.headers.get('content-type', '').lower()
+    resp.encoding = resp.apparent_encoding  # Fix garbled HTML
+
+    if 'text/html' in content_type:
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        title = soup.title.string.strip() if soup.title else 'No title'
+        # Get summary: first 3 non-empty paragraphs or first 500 chars
+        paragraphs = [p.get_text(strip=True) for p in soup.find_all('p') if p.get_text(strip=True)]
+        if paragraphs:
+            summary = '\n'.join(paragraphs[:3])
+        else:
+            for element in soup(["script", "style", "nav", "header", "footer", "aside"]):
+                element.decompose()
+            content = soup.get_text(separator=' ', strip=True)
+            summary = content[:500] + ('...' if len(content) > 500 else '')
+        return {'type': 'html', 'title': title, 'summary': summary}
+
+    elif 'application/json' in content_type or resp.text.strip().startswith('{'):
+        try:
+            return {'type': 'json', 'data': resp.json()}
+        except Exception:
+            return {'type': 'json', 'error': 'Invalid JSON'}
+
+    else:
+        ext = mimetypes.guess_extension(content_type.split(';')[0]) or '.bin'
+        filename = f"downloaded_file{ext}"
+        with open(filename, 'wb') as f:
+            for chunk in resp.iter_content(8192):
+                f.write(chunk)
+        return {'type': 'binary', 'message': f'Saved to {filename}'}
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
@@ -366,26 +401,24 @@ def intelligent_summarize(text, url=""):
     return '\n'.join(key_points[:5])  # Max 5 bullet points
 
 # === MAIN EXECUTION ===
+import sys
+
 if __name__ == "__main__":
-    URL = input("Enter the URL: ")
-    result = intelligent_scrape(URL)
-    
-    print("\n=== EXTRACTED INFORMATION ===")
-    print(f"Title: {result['title']}")
-    print(f"Description: {result['description']}")
-    print(f"Method Used: {result.get('method', 'Unknown')}")
-    
-    if result.get('structured_info'):
-        print("\n=== STRUCTURED INFO ===")
-        for key, value in result['structured_info'].items():
-            if isinstance(value, list):
-                print(f"{key.replace('_', ' ').title()}: {', '.join(value)}")
-            else:
-                print(f"{key.replace('_', ' ').title()}: {value}")
-    
-    print(f"\nContent Length: {result['content_length']} characters")
-    print(f"\n=== SUMMARY ===")
-    print(result['summary'])
-    
-    if result.get('note'):
-        print(f"\nNote: {result['note']}")
+    if len(sys.argv) > 1:
+        URL = sys.argv[1]
+        print(f"URL provided as argument: {URL}")
+    else:
+        URL = input("Enter the URL: ")
+    result = smart_fetch(URL)
+    print("\n=== SMART FETCH RESULT ===")
+    if result['type'] == 'html':
+        print(f"Title: {result['title']}")
+        print("\nSummary:\n")
+        print(result['summary'])
+    elif result['type'] == 'json':
+        print("JSON Response:")
+        print(result['data'] if 'data' in result else result.get('error'))
+    elif result['type'] == 'binary':
+        print(result['message'])
+    else:
+        print(result)

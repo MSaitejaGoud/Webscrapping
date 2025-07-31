@@ -1,3 +1,33 @@
+import mimetypes
+import os
+# --- SMART FETCH FUNCTION ---
+def smart_fetch(url):
+    resp = requests.get(url, stream=True)
+    content_type = resp.headers.get('content-type', '').lower()
+    resp.encoding = resp.apparent_encoding  # Fix garbled HTML
+
+    if 'text/html' in content_type:
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        title = soup.title.string.strip() if soup.title else 'No title'
+        # Get all visible text content
+        for element in soup(["script", "style", "nav", "header", "footer", "aside"]):
+            element.decompose()
+        content = soup.get_text(separator=' ', strip=True)
+        return {'type': 'html', 'title': title, 'content': content}
+
+    elif 'application/json' in content_type or resp.text.strip().startswith('{'):
+        try:
+            return {'type': 'json', 'data': resp.json()}
+        except Exception:
+            return {'type': 'json', 'error': 'Invalid JSON'}
+
+    else:
+        ext = mimetypes.guess_extension(content_type.split(';')[0]) or '.bin'
+        filename = f"downloaded_file{ext}"
+        with open(filename, 'wb') as f:
+            for chunk in resp.iter_content(8192):
+                f.write(chunk)
+        return {'type': 'binary', 'message': f'Saved to {filename}'}
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
@@ -8,14 +38,9 @@ def intelligent_scrape(url):
     # Try regular scraping first
     result = try_regular_scraping(url)
     
-    # If content is too short or indicates JS loading, try browser automation
+    # If content is too short or indicates JS loading, try Selenium
     if result['content_length'] < 100 or 'loading' in result.get('full_content', '').lower():
-        print("Regular scraping failed, trying Playwright...")
-        playwright_result = try_playwright_scraping(url)
-        if playwright_result and playwright_result['content_length'] > result['content_length']:
-            return playwright_result
-            
-        print("Playwright failed, trying Selenium...")
+        print("Regular scraping failed, trying Selenium...")
         selenium_result = try_selenium_scraping(url)
         if selenium_result and selenium_result['content_length'] > result['content_length']:
             return selenium_result
@@ -91,54 +116,7 @@ def try_regular_scraping(url):
     except Exception as e:
         return extract_from_url(url, str(e))
 
-def try_playwright_scraping(url):
-    try:
-        from playwright.sync_api import sync_playwright
-        
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            
-            page.set_extra_http_headers({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            })
-            
-            page.goto(url, wait_until='networkidle')
-            page.wait_for_timeout(3000)
-            
-            html = page.content()
-            browser.close()
-        
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        title = soup.title.string.strip() if soup.title else "No title found"
-        desc_tag = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
-        description = desc_tag.get('content', 'Not found') if desc_tag else 'Not found'
-        
-        structured_info = extract_structured_data(soup, url)
-        
-        for element in soup(["script", "style", "nav", "header", "footer", "aside"]):
-            element.decompose()
-        
-        content = soup.get_text(separator=' ', strip=True)
-        content = ' '.join([line.strip() for line in content.split('\n') if line.strip()])
-        
-        return {
-            'success': True,
-            'title': title,
-            'description': description,
-            'structured_info': structured_info,
-            'content_length': len(content),
-            'full_content': content,
-            'method': 'Playwright Scraping'
-        }
-        
-    except ImportError:
-        print("Playwright not installed. Install with: pip install playwright")
-        return None
-    except Exception as e:
-        print(f"Playwright scraping failed: {e}")
-        return None
+## Playwright scraping removed. All scraping now uses requests/BeautifulSoup or Selenium fallback.
 
 def try_selenium_scraping(url):
     try:
@@ -298,24 +276,16 @@ def extract_structured_data(soup, url):
 # === MAIN EXECUTION ===
 if __name__ == "__main__":
     URL = input("Enter the URL: ")
-    result = intelligent_scrape(URL)
-    
-    print("\n=== EXTRACTED INFORMATION ===")
-    print(f"Title: {result['title']}")
-    print(f"Description: {result['description']}")
-    print(f"Method Used: {result.get('method', 'Unknown')}")
-    
-    if result.get('structured_info'):
-        print("\n=== STRUCTURED INFO ===")
-        for key, value in result['structured_info'].items():
-            if isinstance(value, list):
-                print(f"{key.replace('_', ' ').title()}: {', '.join(value)}")
-            else:
-                print(f"{key.replace('_', ' ').title()}: {value}")
-    
-    print(f"\nContent Length: {result['content_length']} characters")
-    print(f"\n=== FULL CONTENT ===")
-    print(result['full_content'])
-    
-    if result.get('note'):
-        print(f"\nNote: {result['note']}")
+    result = smart_fetch(URL)
+    print("\n=== SMART FETCH RESULT ===")
+    if result['type'] == 'html':
+        print(f"Title: {result['title']}")
+        print("\nFull Content:\n")
+        print(result['content'])
+    elif result['type'] == 'json':
+        print("JSON Response:")
+        print(result['data'] if 'data' in result else result.get('error'))
+    elif result['type'] == 'binary':
+        print(result['message'])
+    else:
+        print(result)
