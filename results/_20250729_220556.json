@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "url": "",
+  "timestamp": "2025-07-29 22:05:56",
+  "title": " - Page",
+  "description": "Page from ",
+  "structured_info": {
+    "domain": "",
+    "path_parts": []
+  },
+  "content_length": 0,
+  "summary": "Content from . Error: Invalid URL '': No scheme supplied. Perhaps you meant https://?",
+  "note": "Info extracted from URL structure"
+}
